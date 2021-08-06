@@ -28,18 +28,16 @@ Two algorithms are implemented:
 
 - the base one with sieving out starting at `factor * factor`
 and going by steps of `2 * factor`.
-- and a refinement using the "480 out of 2310" wheel (`2*3*5*7*11`). With `pdftex`
-this runs almost 3X times faster than the odd-only algorithm, but with `luatex`
-the improvement is more like 2.2X, for unknown reasons.
+- and a refinement using the "480 out of 2310" wheel (`2*3*5*7*11`).
 
 Even configuring `pdftex` (which has no dynamic memory allocation) to its
 maximal TeXLive memory setting, a maximum of `294` passes can be done with it
 for the sieving range of `1,000,000` (each pass consuming about `500,000`
 words of font memory).
 
-As at my locale I achieve with `pdftex` `23` passes for the wheel
-implementation (compared to `8` for the base implementation), a computer about
-`13` times faster than mine would exhaust `pdftex` maximal font memory during
+As at my locale I achieve with `pdftex` `42` passes for the wheel
+implementation, a computer about
+`7` times faster than mine would exhaust `pdftex` maximal font memory during
 the benchmark.
 
 For this reason the Dockerfile is configured to run only the `luatex`
@@ -81,29 +79,29 @@ DDR3 of memory (mid-2012 machine).
 Docker run:
 
 ```
-jfbu-tex;10;5.38837;1;algorithm=base,faithful=no
-jfbu-tex-480of2310;23;5.04814;1;algorithm=wheel,faithful=no,bits=32
+jfbu-tex;23;5.10483;1;algorithm=base,faithful=no,bits=32
+jfbu-tex-480of2310;35;5.03275;1;algorithm=wheel,faithful=no,bits=32
 ```
 
-Native run (with `luatex`: `/bin/sh run.sh`):
+Native run (with `luatex`: `/bin/sh run.sh`). The `luatex` is `1.13` from
+TeXLive 2021, the one of the Dockerfile is `1.07.0` from TeXLive 2018.
 
 ```
-jfbu-tex;10;5.39767;1;algorithm=base,faithful=no
-jfbu-tex-480of2310;22;5.22046;1;algorithm=wheel,faithful=no,bits=32
+jfbu-tex;21;5.2344;1;algorithm=base,faithful=no,bits=32
+jfbu-tex-480of2310;31;5.1061;1;algorithm=wheel,faithful=no,bits=32
 ```
 
-Native run (with `pdftex`: `/bin/sh runpdftex.sh`):
+Native run (with `pdftex`: `/bin/sh runpdftex.sh`). The `pdftex` is compiled
+locally from sources with compiler flags for speed.
 
 ```
-jfbu-tex;8;5.19325;1;algorithm=base,faithful=no
-jfbu-tex-480of2310;23;5.19388;1;algorithm=wheel,faithful=no,bits=32
+jfbu-tex;26;5.12202;1;algorithm=base,faithful=no,bits=32
+jfbu-tex-480of2310;42;5.02986;1;algorithm=wheel,faithful=no,bits=32
 ```
 
-I don't know why the speed increase from base (one out of two) to wheel (480
-out of 2310) is almost 3 with `pdftex` and lower with `luatex`. Also for some
-reason the Docker runs I did `pdftex` were about `15%` slower than my native
-runs, possibly having to do with the fact that I compiled the `pdftex` binary
-locally but not the `luatex`.
+I don't know why the speed ratio wheel/base is slightly higher with `pdftex`
+than with `luatex`. Also, this ratio is a bit disappointing: perhaps an
+indication my wheel implementation has room for improvements.
 
 ## Information on some of the files
 
@@ -148,6 +146,15 @@ other configurable range) and then output to `pdf` the prime numbers in a
 column-wise manner, the columns being filled from left to right for the `h`
 version and from top to bottom for the `v` version.
 
+`getlistofprimes_{erato,wheel}.sh` is to be executed with `/bin/sh`. They test
+production of files `listofprimes-<range>.txt` for `<range>` varying from
+`1,000,000` to `999,999,999`.  The costliest part is not the sieving but the
+creation of the text files, one prime per line (I have not tried to experiment
+alternative ways to write from TeX to the created files, as this is not topic
+of the drag-race).  Please check first typical timings on my hardware in
+`{erato,wheel}_primestofile_timings.txt`.
+
+
 ## More info on native runs with pdftex
 
 Executing
@@ -156,7 +163,7 @@ Executing
 pdftex erato_benchmark && cat erato_benchmark-out.txt
 ```
 
-will most certainly fail, except if your computer is very slow.
+will certainly fail due to exhausted `pdftex` memory, except if your computer is very slow.
 
 To fix this, make sure that the repertory contains the contributed file
 `texmf.cnf` and do `export TEXMFCNF="$(pwd):"` and then try again.
