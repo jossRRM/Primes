@@ -26,10 +26,19 @@
 #define TRUE (1)
 #define FALSE (0)
 #define BOOL int
-
-#define WORD uint64_t
-#define BITS_PER_WORD (64)
 #define BYTE unsigned char
+
+#if defined __x86_64__
+#   define WORD uint64_t
+#   define BITS_PER_WORD (64)
+#   define firstSetBit( word_ ) ( BITS_PER_WORD - 1 - __builtin_clzll( (WORD)(word_) ) )
+#   define leastSetBit( word_ ) (                     __builtin_ctzll( (WORD)(word_) ) )
+#else /* 32-bit */
+#   define WORD uint32_t
+#   define BITS_PER_WORD (32)
+#   define firstSetBit( word_ ) ( BITS_PER_WORD - 1 - __builtin_clz( (WORD)(word_) ) )
+#   define leastSetBit( word_ ) (                     __builtin_ctz( (WORD)(word_) ) )
+#endif
 
 #define wordIndexOf(n)  ( ((n) / 2) / BITS_PER_WORD )
 #define bitIndexOf(n)   ( ((n) / 2) % BITS_PER_WORD )
@@ -42,22 +51,45 @@
 #define clearBit( buffer_, bitIndex_ ) ( (buffer_)[wordIndexOf(bitIndex_)] &= ~maskOf(bitIndex_) )
 #define setBit(   buffer_, bitIndex_ ) ( (buffer_)[wordIndexOf(bitIndex_)] |=  maskOf(bitIndex_) )
 
-#define firstSetBit( word_ ) ( BITS_PER_WORD - 1 - __builtin_clzll( (WORD)(word_) ) )
-#define leastSetBit( word_ ) (                     __builtin_ctzll( (WORD)(word_) ) )
 
 #define DEFAULT_SIZE (1000 * 1000)
 
+void memCpy( void *pDest, void const *pSrc, unsigned int bytes )
+{
+    if( 15 < bytes )
+    {
+        WORD *pDestWord = pDest;
+        WORD const *pSrcWord = pSrc;
+        unsigned int words = bytes / sizeof(WORD);
+        bytes -= words * sizeof(WORD);
+
+        while( words-- )
+        {
+            *pDestWord++ = *pSrcWord++;
+        }
+        pDest = pDestWord;
+        pSrc = pSrcWord;
+    }
+
+    BYTE *pDestByte = pDest;
+    BYTE const *pSrcByte = pSrc;
+    while( bytes-- )
+    {
+        *pDestByte++ = *pSrcByte++;
+    }
+}
+
 unsigned int maxNumber = DEFAULT_SIZE;
 
-WORD const ones = 0xFFFFFFFFFFFFFFFFuLL;
+WORD const ones = (WORD)0xFFFFFFFFFFFFFFFFuLL;
 
 typedef struct {
-    unsigned int const maxNumber;
-    WORD * const buffer;
+    unsigned int maxNumber;
+    WORD *buffer;
 } SIEVE;
 
 // Search the bit array for the next set bit, which corresponds to the next prime
-static inline unsigned int nextPrime( WORD *buffer, unsigned int lastPrime )
+unsigned int nextPrime( WORD const *buffer, unsigned int lastPrime )
 {
     unsigned int const primeCandidate = lastPrime + 2;
 
@@ -79,7 +111,7 @@ static inline unsigned int nextPrime( WORD *buffer, unsigned int lastPrime )
 // remaining bits, so we search for set bits and map from bits to factors.
 // Search from highest possible set bit to lowest in order that we do not remove a
 // factor that we still need to use.
-static inline void sieveOnePrime( WORD *buffer, unsigned int prime, unsigned int maxNumber )
+void sieveOnePrime( WORD *buffer, unsigned int prime, unsigned int maxNumber )
 {
     // Factor to use in eliminating a multiple
     unsigned int const maxFactor = maxNumber / prime;
@@ -91,7 +123,7 @@ static inline void sieveOnePrime( WORD *buffer, unsigned int prime, unsigned int
         while( 0u != word )
         {
             unsigned int bitIndex = firstSetBit( word );
-            WORD const mask = 1uLL << bitIndex;
+            WORD const mask = (WORD)1uLL << bitIndex;
             unsigned int factor = bitIndex * 2 + 1 + wordIndex * BITS_PER_WORD * 2;
             if( factor < prime ) break;
             word &= ~mask;
@@ -114,36 +146,35 @@ static inline void sieveOnePrime( WORD *buffer, unsigned int prime, unsigned int
 
 // maxNumber - find all primes strictly LESS than this number.
 //
-void primes( SIEVE const *pSieve )
+void primes( SIEVE *pSieve )
 {
     unsigned int i; // Loop index
-    unsigned int prime          = 3u;
-    unsigned int primesProduct  = 1u; // Not including 2
+    unsigned int prime           = 3u;
+    unsigned int primesProduct   = 1u; // Not including 2
 
-    unsigned int const wordMax  = allocOf( maxNumber );
-    unsigned int const byteMax  = 8 * wordMax;
     unsigned int const maxNumber = pSieve->maxNumber;
-    WORD * const buffer         = pSieve->buffer;
-    BYTE * const bufferU8       = (BYTE *)buffer;
+    unsigned int const wordMax   = allocOf( maxNumber );
+    unsigned int const byteMax   = sizeof(WORD) * wordMax;
+    WORD * const buffer          = pSieve->buffer;
+    BYTE * const bufferByte      = (BYTE *)buffer;
 
-    buffer[0] = ones; // Actually, only one byte is required
-    WORD smallPrimes = 0u;
+    buffer[0]                    = ones; // Actually, only one byte is required
+    WORD smallPrimes             = 0u;
 
     // Dynamic (or lazy) sieve wheel avoids reliance on pre-computed primes
     for( ;; )
     {
         // Make prime-1 more copies of initialized bytes until buffer is full
-        for( i = 1u; i < prime; ++i )
+        unsigned int const bytesToCopy = primesProduct * (prime-1);
+        if( byteMax < bytesToCopy + primesProduct )
         {
-            if( byteMax < (i+1) * primesProduct )
-            {
-                // Complete initialization of bit array
-                unsigned int const remainingBytes = byteMax - i * primesProduct;
-                memcpy( bufferU8 + i * primesProduct, bufferU8, remainingBytes );
-                goto doneInit;
-            }
-            memcpy( bufferU8 + i * primesProduct, bufferU8, primesProduct );
+            // bytesToCopy would go off the end of the array
+            // Just copy to byteMax and stop
+            memCpy( bufferByte + primesProduct, bufferByte, byteMax - primesProduct );
+            break;
         }
+        // Exploit simplistic memcpy to create all required copies with one call
+        memCpy( bufferByte + primesProduct, bufferByte, bytesToCopy );
         primesProduct *= prime;
         sieveOnePrime( buffer, prime, primeOf( primesProduct * 8 ) );
         // Remove these small primes from buffer and save in smallPrimes
@@ -151,7 +182,6 @@ void primes( SIEVE const *pSieve )
         setBit( &smallPrimes, prime );
         prime = nextPrime( buffer, prime );
     }
-    doneInit:
     // Restore small primes to buffer
     buffer[0] |= smallPrimes;
 
@@ -203,7 +233,7 @@ unsigned int countPrimes(SIEVE const *pSieve)
     return count;
 }
 
-void timedTest( int secs, void primeFinder( SIEVE const *pSieve ), char *title )
+void timedTest( int secs, void primeFinder( SIEVE *pSieve ), char *title )
 {
     clock_t startTicks = clock( );
     clock_t currentTicks;
@@ -214,11 +244,15 @@ void timedTest( int secs, void primeFinder( SIEVE const *pSieve ), char *title )
     clock_t limitTicks = secs * CLOCKS_PER_SEC + startTicks;
 
     // Allocate sieve "object" once
-    SIEVE const sieve = { maxNumber, malloc( allocOf( maxNumber ) * sizeof(WORD) ) };
+    SIEVE *pSieve = malloc( sizeof(SIEVE) );
+    pSieve->maxNumber = maxNumber;
+    pSieve->buffer = malloc( allocOf( maxNumber ) * sizeof(WORD) );
 
     // Check first for accuracy against known values.
-    primeFinder( &sieve );
-    unsigned int primeCount = countPrimes( &sieve );
+    primeFinder( pSieve );
+    unsigned int primeCount = countPrimes( pSieve );
+    free( pSieve->buffer );
+    free( pSieve );
 
 #if defined DEBUG
     printf("Found %d primes up to %d.\n\n", primeCount, maxNumber);
@@ -245,7 +279,12 @@ void timedTest( int secs, void primeFinder( SIEVE const *pSieve ), char *title )
             break;
         }
         passes++;
-        primeFinder( &sieve );
+        pSieve = malloc( sizeof(SIEVE) );
+        pSieve->maxNumber = maxNumber;
+        pSieve->buffer = malloc( allocOf( maxNumber ) * sizeof(WORD) );
+        primeFinder( pSieve );
+        free( pSieve->buffer );
+        free( pSieve );
     }
     while
 #if defined DEBUG
