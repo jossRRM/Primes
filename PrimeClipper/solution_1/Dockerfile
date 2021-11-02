@@ -12,8 +12,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     rm "${HARBOUR_PKG}" 
 
-COPY . /opt/
+COPY . .
 
-RUN hbmk2 -gtstd -optim -cflag=-O3 ./sieve.prg 
+RUN hbmk2 -gtstd -optim -cflag=-O3 ./sieve.prg \
+    && hbmk2 -gtstd -optim -cflag=-O3 ./sievedb.prg \
+    && hbmk2 -gtstd -optim -cflag=-O3 ./sieve_xharbour.prg
 
-CMD [ "./sieve" ]
+CMD [ "bash", "./run.sh" ]
