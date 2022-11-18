@@ -1,15 +1,13 @@
 # use the image below as the preffered base image
 # see CONTRIBUTING.md
-FROM ghcr.io/theotterlord/bun:v0.1.10-ubuntu
+FROM ghcr.io/theotterlord/bun:v0.1.13-ubuntu
 
 WORKDIR /opt/app
 
 SHELL [ "/bin/bash", "-o", "pipefail", "-c" ]
 
 RUN apt-get update &&\
-    apt-get install --no-install-recommends -y zip unzip \
-        curl=7.81.0-1ubuntu1.3 \
-    &&\
+    apt-get install --no-install-recommends -y zip unzip curl &&\
     # NodeJS
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - &&\
     apt-get install --no-install-recommends -y nodejs \
@@ -40,4 +38,4 @@ COPY run.sh \
 ENTRYPOINT [ "./run.sh" ]
 
 # For manual debugging
-# ENTRYPOINT [ "/bin/bash" ]
+#ENTRYPOINT [ "/bin/bash" ]
